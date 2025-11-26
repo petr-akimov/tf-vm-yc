@@ -1,11 +1,12 @@
-name: "Manual Terraform Deploy (Artifacts at GitHub cache)"
+name: "Terraform Deploy (Artifacts state)"
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Choose action: apply or destroy"
+        description: "Choose action"
         required: true
+        default: "apply"
         type: choice
         options:
           - apply
@@ -16,10 +17,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
   terraform:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -35,9 +38,9 @@ jobs:
           if [ -f "./state-artifact/terraform.tfstate" ]; then
             mkdir -p terraform
             mv ./state-artifact/terraform.tfstate terraform/terraform.tfstate
-            echo "State restored"
+            echo "Restored terraform.tfstate"
           else
-            echo "No previous state found"
+            echo "No previous state artifact found"
           fi
 
       - name: Setup Terraform
@@ -45,34 +48,42 @@ jobs:
         with:
           terraform_version: 1.6.0
 
+      - name: Configure env
+        run: |
+          echo "YC_OAUTH_TOKEN=${{ secrets.YC_OAUTH_TOKEN }}" >> $GITHUB_ENV
+          echo "YC_CLOUD_ID=${{ secrets.YC_CLOUD_ID }}" >> $GITHUB_ENV
+          echo "YC_FOLDER_ID=${{ secrets.YC_FOLDER_ID }}" >> $GITHUB_ENV
+          echo "YC_PUBLIC_KEY=${{ secrets.YC_PUBLIC_KEY }}" >> $GITHUB_ENV
+
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
 
-      - name: Terraform Apply or Destroy
+      #
+      # -------- APPLY --------
+      #
+      - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'apply' }}
         working-directory: terraform
-        env:
-          YC_OAUTH_TOKEN: ${{ secrets.YC_OAUTH_TOKEN }}
-          YC_CLOUD_ID: ${{ secrets.YC_CLOUD_ID }}
-          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
-          YC_PUBLIC_KEY: ${{ secrets.YC_PUBLIC_KEY }}
         run: |
-          echo "Action: ${{ github.event.inputs.action }}"
+          terraform apply -auto-approve \
+            -var="yc_oauth_token=${YC_OAUTH_TOKEN}" \
+            -var="yc_cloud_id=${YC_CLOUD_ID}" \
+            -var="yc_folder_id=${YC_FOLDER_ID}" \
+            -var="yc_public_key=${YC_PUBLIC_KEY}"
 
-          if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
-            echo "Running DESTROY..."
-            terraform destroy -auto-approve \
-              -var="yc_oauth_token=${YC_OAUTH_TOKEN}" \
-              -var="yc_cloud_id=${YC_CLOUD_ID}" \
-              -var="yc_folder_id=${YC_FOLDER_ID}" \
-              -var="yc_public_key=${YC_PUBLIC_KEY}"
-          else
-            echo "Running APPLY..."
-            terraform apply -auto-approve \
-              -var="yc_oauth_token=${YC_OAUTH_TOKEN}" \
-              -var="yc_cloud_id=${YC_CLOUD_ID}" \
-              -var="yc_folder_id=${YC_FOLDER_ID}" \
-              -var="yc_public_key=${YC_PUBLIC_KEY}"
+      #
+      # -------- DESTROY --------
+      #
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        working-directory: terraform
+        run: |
+          terraform destroy -auto-approve \
+            -var="yc_oauth_token=${YC_OAUTH_TOKEN}" \
+            -var="yc_cloud_id=${YC_CLOUD_ID}" \
+            -var="yc_folder_id=${YC_FOLDER_ID}" \
+            -var="yc_public_key=${YC_PUBLIC_KEY}"
 
       - name: Upload terraform state (artifact)
         if: ${{ github.event.inputs.action == 'apply' }}
