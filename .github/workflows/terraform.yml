@@ -1,12 +1,11 @@
-name: "Terraform Deploy (Artifacts state)"
+name: "Terraform Deploy (State in Repo)"
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Choose action"
+        description: "Choose action: apply or destroy"
         required: true
-        default: "apply"
         type: choice
         options:
           - apply
@@ -17,31 +16,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-
   terraform:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Restore terraform state (artifact)
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-state-${{ github.ref_name }}
-          path: ./state-artifact
-        continue-on-error: true
-
-      - name: Move state if exists
-        run: |
-          if [ -f "./state-artifact/terraform.tfstate" ]; then
-            mkdir -p terraform
-            mv ./state-artifact/terraform.tfstate terraform/terraform.tfstate
-            echo "Restored terraform.tfstate"
-          else
-            echo "No previous state artifact found"
-          fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
@@ -59,9 +39,6 @@ jobs:
         working-directory: terraform
         run: terraform init
 
-      #
-      # -------- APPLY --------
-      #
       - name: Terraform Apply
         if: ${{ github.event.inputs.action == 'apply' }}
         working-directory: terraform
@@ -72,9 +49,6 @@ jobs:
             -var="yc_folder_id=${YC_FOLDER_ID}" \
             -var="yc_public_key=${YC_PUBLIC_KEY}"
 
-      #
-      # -------- DESTROY --------
-      #
       - name: Terraform Destroy
         if: ${{ github.event.inputs.action == 'destroy' }}
         working-directory: terraform
@@ -85,9 +59,11 @@ jobs:
             -var="yc_folder_id=${YC_FOLDER_ID}" \
             -var="yc_public_key=${YC_PUBLIC_KEY}"
 
-      - name: Upload terraform state (artifact)
-        if: ${{ github.event.inputs.action == 'apply' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-state-${{ github.ref_name }}
-          path: terraform/terraform.tfstate
+      - name: Commit and Push terraform.tfstate
+        if: ${{ github.event.inputs.action == 'apply' || github.event.inputs.action == 'destroy' }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add terraform/terraform.tfstate
+          git commit -m "Update terraform.tfstate after ${{ github.event.inputs.action }}" || echo "No changes to commit"
+          git push
