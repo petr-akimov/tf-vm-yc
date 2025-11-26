@@ -30,7 +30,7 @@ resource "yandex_compute_instance" "vm" {
 
   boot_disk {
     initialize_params {
-      image_id = "fd8kqfep4h1n9s1n4t5o" # Ubuntu 22.04
+      image_id = "f2esqeg4pqbtdofd3kh9" # Ubuntu 22.04
     }
   }
 
