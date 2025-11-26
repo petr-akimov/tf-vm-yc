@@ -1,0 +1,106 @@
+name: 'Terraform Deploy'
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+        - apply
+        - destroy
+
+env:
+  TF_VERSION: '1.5.0'
+
+jobs:
+  terraform:
+    name: 'Terraform ${{ github.event.inputs.action }}'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Create SSH key file
+      run: |
+        mkdir -p ./terraform/ssh
+        echo '${{ secrets.YC_PUBLIC_KEY }}' > ./terraform/ssh/id_rsa.pub
+
+    - name: Terraform Init (First Time)
+      if: github.event.inputs.action == 'apply'
+      run: terraform init
+      working-directory: ./terraform
+      env:
+        TF_VAR_yc_token: ${{ secrets.YC_OAUTH_TOKEN }}
+        TF_VAR_yc_cloud_id: ${{ secrets.YC_CLOUD_ID }}
+        TF_VAR_yc_folder_id: ${{ secrets.YC_FOLDER_ID }}
+
+    - name: Terraform Apply
+      if: github.event.inputs.action == 'apply'
+      run: terraform apply -auto-approve
+      working-directory: ./terraform
+      env:
+        TF_VAR_yc_token: ${{ secrets.YC_OAUTH_TOKEN }}
+        TF_VAR_yc_cloud_id: ${{ secrets.YC_CLOUD_ID }}
+        TF_VAR_yc_folder_id: ${{ secrets.YC_FOLDER_ID }}
+
+    - name: Terraform Init (For Destroy)
+      if: github.event.inputs.action == 'destroy'
+      run: terraform init
+      working-directory: ./terraform
+      env:
+        TF_VAR_yc_token: ${{ secrets.YC_OAUTH_TOKEN }}
+        TF_VAR_yc_cloud_id: ${{ secrets.YC_CLOUD_ID }}
+        TF_VAR_yc_folder_id: ${{ secrets.YC_FOLDER_ID }}
+
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: terraform destroy -auto-approve
+      working-directory: ./terraform
+      env:
+        TF_VAR_yc_token: ${{ secrets.YC_OAUTH_TOKEN }}
+        TF_VAR_yc_cloud_id: ${{ secrets.YC_CLOUD_ID }}
+        TF_VAR_yc_folder_id: ${{ secrets.YC_FOLDER_ID }}
+
+    - name: Get Terraform Outputs
+      if: github.event.inputs.action == 'apply'
+      id: outputs
+      run: |
+        echo "external_ip=$(terraform output -raw vm_external_ip)" >> $GITHUB_OUTPUT
+        echo "internal_ip=$(terraform output -raw vm_internal_ip)" >> $GITHUB_OUTPUT
+        echo "ssh_command=$(terraform output -raw ssh_connection_command)" >> $GITHUB_OUTPUT
+      working-directory: ./terraform
+
+    - name: Show Deployment Results
+      if: github.event.inputs.action == 'apply'
+      run: |
+        echo "🚀 Deployment completed successfully!"
+        echo "📡 External IP: ${{ steps.outputs.outputs.external_ip }}"
+        echo "🔗 Internal IP: ${{ steps.outputs.outputs.internal_ip }}"
+        echo "🖥️  VM Name: production-vm"
+        echo "📍 Zone: ru-central1-a"
+        echo "💻 CPU: 2 cores"
+        echo "💾 Memory: 2 GB"
+        echo "💿 Disk: 20 GB"
+        echo "🐧 OS: Ubuntu 22.04"
+        echo "🔑 SSH Access: ${{ steps.outputs.outputs.ssh_command }}"
+        echo "💾 State bucket: terraform-state-bucket-${{ secrets.YC_FOLDER_ID }}"
+
+    - name: Show Destroy Results
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "🗑️  All resources destroyed successfully!"
+        echo "💾 State bucket and service account also removed"
+
+    - name: Cleanup SSH key
+      if: always()
+      run: rm -rf ./terraform/ssh
