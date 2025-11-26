@@ -40,6 +40,6 @@ resource "yandex_compute_instance" "vm" {
   }
 
   metadata = {
-    ssh-keys = "ubuntu:${var.ssh_public_key}"
+    ssh-keys = "ubuntu:${var.yc_public_key}"
   }
 }
