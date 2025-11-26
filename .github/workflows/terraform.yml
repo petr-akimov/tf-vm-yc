@@ -2,16 +2,27 @@ name: "Terraform Deploy (Artifacts state)"
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose action"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
 
 concurrency:
   group: "terraform-${{ github.ref }}"
   cancel-in-progress: false
 
 jobs:
+
   terraform:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -48,20 +59,34 @@ jobs:
         working-directory: terraform
         run: terraform init
 
+      #
+      # -------- APPLY --------
+      #
       - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'apply' }}
         working-directory: terraform
-        env:
-          YC_OAUTH_TOKEN: ${{ secrets.YC_OAUTH_TOKEN }}
-          YC_CLOUD_ID: ${{ secrets.YC_CLOUD_ID }}
-          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
-          YC_PUBLIC_KEY: ${{ secrets.YC_PUBLIC_KEY }}
-        run: terraform apply -auto-approve \
-          -var yc_oauth_token=${{ secrets.YC_OAUTH_TOKEN }} \
-          -var yc_cloud_id=${{ secrets.YC_CLOUD_ID }} \
-          -var yc_folder_id=${{ secrets.YC_FOLDER_ID }} \
-          -var yc_public_key="${{ secrets.YC_PUBLIC_KEY }}"
+        run: |
+          terraform apply -auto-approve \
+            -var="yc_oauth_token=${YC_OAUTH_TOKEN}" \
+            -var="yc_cloud_id=${YC_CLOUD_ID}" \
+            -var="yc_folder_id=${YC_FOLDER_ID}" \
+            -var="yc_public_key=${YC_PUBLIC_KEY}"
+
+      #
+      # -------- DESTROY --------
+      #
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        working-directory: terraform
+        run: |
+          terraform destroy -auto-approve \
+            -var="yc_oauth_token=${YC_OAUTH_TOKEN}" \
+            -var="yc_cloud_id=${YC_CLOUD_ID}" \
+            -var="yc_folder_id=${YC_FOLDER_ID}" \
+            -var="yc_public_key=${YC_PUBLIC_KEY}"
 
       - name: Upload terraform state (artifact)
+        if: ${{ github.event.inputs.action == 'apply' }}
         uses: actions/upload-artifact@v4
         with:
           name: terraform-state-${{ github.ref_name }}
